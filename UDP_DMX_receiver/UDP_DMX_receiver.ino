@@ -1,23 +1,24 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <esp_dmx.h>
 
 // WiFi設定
 const char *ssid = "KARAKURI_ARTNET";
 WiFiUDP udp;
 const int udpPort = 12345;
 
-// DMX設定
-#define DMX_PORT DMX_NUM_1
-const int DMX_TX_PIN = 7;  // 実際の接続に合わせて
-const int DMX_RX_PIN = 6;  // 未使用でも設定が必要
-const int DMX_RTS_PIN = 8; // DEピン（送信方向切り替え）に使う
+// DMX用ピン
+#define DMX_TX_PIN 7      // DIピン
+#define DMX_DIR_PIN 8     // DE/REピン（送信時はHIGH）
 
-// DMX受信用バッファ
-uint8_t dmxData[DMX_PACKET_SIZE];
+HardwareSerial dmxSerial(1);
+uint8_t dmxData[513];  // 0番目はStartCode（常に0）
 
 void setup() {
   Serial.begin(115200);
+
+  // DE/REピン設定
+  pinMode(DMX_DIR_PIN, OUTPUT);
+  digitalWrite(DMX_DIR_PIN, LOW);  // 初期は受信方向（安全）
 
   // WiFi接続
   WiFi.begin(ssid);
@@ -32,26 +33,44 @@ void setup() {
 
   // UDP開始
   udp.begin(udpPort);
-  Serial.print("UDPポート ");
-  Serial.print(udpPort);
-  Serial.println(" を監視中");
+  Serial.println("UDP受信開始");
 
-  // DMXポート初期化
-  dmx_config_t config = DMX_CONFIG_DEFAULT;
-  dmx_driver_install(DMX_PORT, &config, nullptr, 0);
-  dmx_set_pin(DMX_PORT, DMX_TX_PIN, DMX_RX_PIN, DMX_RTS_PIN);
+  // UART初期化（DMX用）
+  dmxSerial.begin(250000, SERIAL_8N2, -1, DMX_TX_PIN);  // RXは使わない
+}
+
+void sendDMX() {
+  // DMX送信
+  digitalWrite(DMX_DIR_PIN, HIGH);  // 送信モード
+
+  // Break信号（88us LOW）
+  Serial.flush();  // 念のため
+  dmxSerial.flush();
+  dmxSerial.end();
+  pinMode(DMX_TX_PIN, OUTPUT);
+  digitalWrite(DMX_TX_PIN, LOW);
+  delayMicroseconds(100);  // Break
+  digitalWrite(DMX_TX_PIN, HIGH);
+  delayMicroseconds(12);   // Mark After Break (MAB)
+  dmxSerial.begin(250000, SERIAL_8N2, -1, DMX_TX_PIN);  // 再初期化
+
+  // データ送信（StartCode + 512チャンネル）
+  dmxSerial.write(dmxData, 513);
+
+  dmxSerial.flush();  // 送信完了まで待つ
+  digitalWrite(DMX_DIR_PIN, LOW);  // 受信モードに戻す（他と共有してる場合）
 }
 
 void loop() {
   int packetSize = udp.parsePacket();
   if (packetSize == 512) {
-    udp.read(dmxData, 512);
+    udp.read(dmxData + 1, 512);  // StartCodeは常に0なので +1
+    dmxData[0] = 0;              // StartCode = 0 (standard DMX)
+    Serial.print(dmxData[1]);
 
-    // DMXに書き込み
-    dmx_write(DMX_PORT, dmxData, 512);
-    dmx_send(DMX_PORT);
-    dmx_wait_sent(DMX_PORT, DMX_TIMEOUT_TICK);
-
-    Serial.println("UDP受信 → DMX出力完了");
+    sendDMX();
+    Serial.println("\tUDP受信 → DMX出力完了");
   }
+
+  delay(1);  // 少し待つ
 }
