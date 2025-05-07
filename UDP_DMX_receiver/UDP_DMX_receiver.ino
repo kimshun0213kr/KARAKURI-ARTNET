@@ -67,6 +67,10 @@ void loop() {
     udp.read(dmxData + 1, 512);  // StartCodeは常に0なので +1
     dmxData[0] = 0;              // StartCode = 0 (standard DMX)
     Serial.print(dmxData[1]);
+    Serial.print("\t");
+    Serial.print(dmxData[2]);
+    Serial.print("\t");
+    Serial.print(dmxData[3]);
 
     sendDMX();
     Serial.println("\tUDP受信 → DMX出力完了");
