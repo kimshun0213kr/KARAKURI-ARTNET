@@ -287,10 +287,10 @@ static void eth_init(void)
 }
 #endif // CONFIG_EXAMPLE_USE_ETH
 
-static void dmx_sender(char dmxParameter[512])
-{
-    EPS_LOGI(TAG, "%s", *dmxParameter);
-}
+// static void dmx_sender(char dmxParameter[512])
+// {
+//     ESP_LOGI(TAG, "%s", *dmxParameter);
+// }
 
 static void udp_server_task(void *pvParameters)
 {
