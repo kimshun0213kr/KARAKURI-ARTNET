@@ -1,0 +1,32 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPathWin": "c:\\Users\\sicp3\\Espressif\\v5.4.1\\esp-idf",
+  "idf.pythonInstallPath": "c:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.openOcdConfigs": ["board/esp32c3-ftdi.cfg"],
+  "idf.portWin": "COM5",
+  "idf.toolsPathWin": "c:\\Espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32c3"
+  },
+  "idf.flashType": "UART",
+  "files.associations": {
+    "*.embeddedhtml": "html",
+    "*.rmd": "markdown",
+    "xlocale": "cpp",
+    "xstring": "cpp",
+    "string": "cpp",
+    "xmemory": "cpp",
+    "iterator": "cpp",
+    "xutility": "cpp",
+    "ostream": "cpp",
+    "format": "cpp",
+    "vector": "cpp",
+    "system_error": "cpp",
+    "iostream": "cpp",
+    "initializer_list": "cpp",
+    "utility": "cpp",
+    "xtree": "cpp",
+    "map": "cpp",
+    "periph_ctrl.h": "c"
+  }
+}
