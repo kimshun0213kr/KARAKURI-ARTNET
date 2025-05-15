@@ -210,12 +210,12 @@ static void wifi_init_sta(void)
         ESP_LOGI(
             TAG, "connected to ap SSID:%s password:%s", EXAMPLE_WIFI_SSID, EXAMPLE_WIFI_PASS);
         gpio_set_level(BLINK_GPIO_BLUE, 1);
+        gpio_set_level(BLINK_GPIO_RED, 0);
     }
     else if (bits & WIFI_FAIL_BIT)
     {
         ESP_LOGI(
             TAG, "Failed to connect to SSID:%s, password:%s", EXAMPLE_WIFI_SSID, EXAMPLE_WIFI_PASS);
-        gpio_set_level(BLINK_GPIO_RED, 1);
     }
     else
     {
@@ -294,11 +294,16 @@ static void eth_init(void)
 
 static void udp_server_task(void *pvParameters)
 {
+    esp_task_wdt_add(NULL);
     char rx_buffer[512];
+    // char past_rx_buffer[512];
     char addr_str[128];
     int addr_family = (int)pvParameters;
     int ip_protocol = 0;
     struct sockaddr_in6 dest_addr;
+
+    int count = 0;
+    int error = 0;
 
     // ここから2行はwhileに入れるな!
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -382,6 +387,8 @@ static void udp_server_task(void *pvParameters)
 
         while (1)
         {
+            count++;
+            gpio_set_level(BLINK_GPIO_RED, 0);
             ESP_LOGI(TAG, "Waiting for data");
 #if defined(CONFIG_LWIP_NETBUF_RECVINFO) && !defined(CONFIG_EXAMPLE_IPV6)
             int len = recvmsg(sock, &msg, 0);
@@ -393,7 +400,9 @@ static void udp_server_task(void *pvParameters)
             {
                 if (errno == EWOULDBLOCK || errno == EAGAIN)
                 {
-                    ESP_LOGI(TAG, "Data not received.");
+                    error++;
+                    ESP_LOGI(TAG, "Data not received.\t\t%lf", (double)(error * (double)100 / count));
+                    gpio_set_level(BLINK_GPIO_RED, 1);
                     // ここでDMX送信コード(前回受信分と同じ信号)を書きたい
                 }
                 else
@@ -427,7 +436,7 @@ static void udp_server_task(void *pvParameters)
                 }
 
                 rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string...
-                ESP_LOGI(TAG, "Received %d bytes from %s:\t%s", len, addr_str, rx_buffer);
+                ESP_LOGI(TAG, "Received %d bytes from %s: %s\tError percent:%lf", len, addr_str, rx_buffer, (double)(error * (double)100 / count));
                 // ここでDMX送信コード(新規受信分)を書きたい
 
                 int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
@@ -438,6 +447,7 @@ static void udp_server_task(void *pvParameters)
                     continue;
                 }
             }
+            esp_task_wdt_reset();
             vTaskDelayUntil(&xLastWakeTime, xFrequency);
         }
 
@@ -454,6 +464,7 @@ static void udp_server_task(void *pvParameters)
 void app_main(void)
 {
     configure_led();
+    gpio_set_level(BLINK_GPIO_RED, 1);
     s_network_event_group = xEventGroupCreate();
 
     ESP_ERROR_CHECK(esp_netif_init());

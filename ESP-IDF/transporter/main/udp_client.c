@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdlib.h>
 #include <sys/param.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,19 +19,43 @@
 #include "esp_task_wdt.h"
 
 #define PORT 3333
-#define BROADCAST_IP "192.168.4.2"
+// #define BROADCAST_IP "192.168.4.2"
+
+#define maxDataLength 512
 
 static const char *TAG = "udp_ap_sender";
 
 char broadcast_ip_list[8][16];
 
+void createData(uint8_t data[maxDataLength])
+{
+    srand((unsigned int)time(NULL));
+    data[0] = rand() * 255 + 1;
+    for (int i = 1; i < maxDataLength; i++)
+    {
+        data[i] = i % 256;
+    }
+}
+
+void random16(uint8_t tmpData[maxDataLength], char *outBuffer)
+{
+    char *p = outBuffer;
+    for (int j = 0; j < maxDataLength; j++)
+    {
+        p += sprintf(p, "%02X", tmpData[j]);
+    }
+    *p = '\0';
+}
+
 void check_connect(void)
 {
-    for(int i=1;i<=8;i++){
-        sprintf(broadcast_ip_list[i],"%s%d","192.168.4.",i);
+    for (int i = 1; i <= 8; i++)
+    {
+        sprintf(broadcast_ip_list[i], "%s%d", "192.168.4.", i);
     }
-    for(int j=1;j<=8;j++){
-        ESP_LOGI(TAG,"%s\n",broadcast_ip_list[j]);
+    for (int j = 1; j <= 8; j++)
+    {
+        ESP_LOGI(TAG, "%s\n", broadcast_ip_list[j]);
     }
 }
 
@@ -49,10 +74,10 @@ void wifi_init_softap(void)
             .channel = 1,
             .password = "12345678",
             .max_connection = 4,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK
-        },
+            .authmode = WIFI_AUTH_WPA_WPA2_PSK},
     };
-    if (strlen((char *)wifi_config.ap.password) == 0) {
+    if (strlen((char *)wifi_config.ap.password) == 0)
+    {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
@@ -63,74 +88,50 @@ void wifi_init_softap(void)
     ESP_LOGI(TAG, "Wi-Fi AP started. SSID:%s", wifi_config.ap.ssid);
 }
 
-// void udp_send_task(void *pvParameters)
-// {
-//     esp_task_wdt_add(NULL);
-//     const char *ip_addr = (const char *)pvParameters;
-    
-//     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-//     if (sock < 0) {
-//         ESP_LOGE(TAG, "Failed to create socket");
-//         vTaskDelete(NULL);
-//         return;
-//     }
-
-//     struct sockaddr_in dest_addr = {
-//         .sin_addr.s_addr = inet_addr(ip_addr),
-//         .sin_family = AF_INET,
-//         .sin_port = htons(PORT),
-//     };
-
-//     TickType_t xLastWakeTime = xTaskGetTickCount();
-//     const TickType_t xFrequency = pdMS_TO_TICKS(20);
-
-//     while (1) {
-//         char *payload = "Hello from AP!";
-//             int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-//             if (err < 0) {
-//                 ESP_LOGE(TAG, "Error sending UDP packet to %s: errno %d",ip_addr, errno);
-//             } else {
-//                 ESP_LOGI(TAG, "Message sent: %s\tTo:%s", payload,ip_addr);
-//             }
-//         // vTaskDelay(pdMS_TO_TICKS(20));  // 1/10秒ごとに送信
-//         esp_task_wdt_reset();
-//         vTaskDelayUntil(&xLastWakeTime,xFrequency);
-//     }
-
-//     close(sock);
-//     vTaskDelete(NULL);
-// }
-
 void udp_send_task(void *pvParameters)
 {
     esp_task_wdt_add(NULL);
 
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    if (sock < 0) {
+    if (sock < 0)
+    {
         ESP_LOGE(TAG, "Failed to create socket");
         vTaskDelete(NULL);
         return;
     }
 
     struct sockaddr_in dest_addr[4];
-    const char* ip_list[] = {"192.168.4.2", "192.168.4.3", "192.168.4.4", "192.168.4.5"};
+    const char *ip_list[] = {"192.168.4.2", "192.168.4.3", "192.168.4.4", "192.168.4.5"};
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++)
+    {
         dest_addr[i].sin_family = AF_INET;
         dest_addr[i].sin_port = htons(PORT);
         dest_addr[i].sin_addr.s_addr = inet_addr(ip_list[i]);
     }
 
     const char *payload = "Hello from AP!";
+
+    char buffer[maxDataLength * 2 + 1];
+    uint8_t intData[maxDataLength];
+
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(20); // 20ms間隔
 
-    while (1) {
-        for (int i = 0; i < 4; i++) {
-            int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr[i], sizeof(dest_addr[i]));
-            if (err < 0) {
+    while (1)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            createData(intData);
+            random16(intData, buffer);
+            // int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr[i], sizeof(dest_addr[i]));
+            int err = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr *)&dest_addr[i], sizeof(dest_addr[i]));
+            if (err < 0)
+            {
                 ESP_LOGE(TAG, "Send error to %s: %d", ip_list[i], errno);
-            } else {
+            }
+            else
+            {
                 ESP_LOGI(TAG, "Sent to %s: %s", ip_list[i], payload);
             }
             esp_task_wdt_reset();
@@ -141,7 +142,6 @@ void udp_send_task(void *pvParameters)
     close(sock);
     vTaskDelete(NULL);
 }
-
 
 void app_main(void)
 {
