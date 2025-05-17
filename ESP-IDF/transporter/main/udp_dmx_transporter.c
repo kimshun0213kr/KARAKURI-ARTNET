@@ -19,11 +19,11 @@
 #include "esp_task_wdt.h"
 
 #define PORT 3333
-// #define BROADCAST_IP "192.168.4.2"
 
 #define maxDataLength 512
+#define LOOP_WAIT_TIME 22
 
-static const char *TAG = "udp_ap_sender";
+static const char *TAG = "DMX_TRANSPORTER";
 
 char broadcast_ip_list[8][16];
 
@@ -116,7 +116,7 @@ void udp_send_task(void *pvParameters)
     uint8_t intData[maxDataLength];
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(20); // 20ms間隔
+    const TickType_t xFrequency = pdMS_TO_TICKS(LOOP_WAIT_TIME); // 20ms間隔
 
     while (1)
     {
@@ -132,7 +132,8 @@ void udp_send_task(void *pvParameters)
             }
             else
             {
-                ESP_LOGI(TAG, "Sent to %s: %s", ip_list[i], payload);
+                // ESP_LOGI(TAG, "Sent to %s: %s", ip_list[i], payload);
+                ESP_LOGI(TAG, "Sent to %s", ip_list[i]);
             }
             esp_task_wdt_reset();
         }

@@ -27,6 +27,7 @@
 
 #include "esp_task_wdt.h"
 
+#include "esp_dmx.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 // #include "esp-err.h"
@@ -81,12 +82,35 @@ static EventGroupHandle_t s_network_event_group;
 #define CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
+// ここから独自define
+
+// ループ周期(ms)
+#define LOOP_WAIT_TIME 22
+
+// DMX関連の初期化
 #define BLINK_GPIO_RED 10
 #define BLINK_GPIO_BLUE 9
-#define LED_PIN 1
+#define LED_PIN 2
 #define ETH_CONNECTION_TMO_MS (10000)
 
-static const char *TAG = "static_ip";
+#define tx_pin 21
+#define rx_pin 7
+#define rts_pin 8
+const dmx_port_t dmx_num = DMX_NUM_1;
+
+#define DMX_LENGTH 512
+
+static const char *TAG = "DMX_RECEIVER";
+
+static void configure_dmx(void)
+{
+    dmx_config_t dmx_config = DMX_CONFIG_DEFAULT;
+    const int personality_count = 1;
+    dmx_personality_t personalities[] = {
+        {1, "Default personality"}};
+    dmx_driver_install(dmx_num, &dmx_config, personalities, personality_count);
+    dmx_set_pin(dmx_num, tx_pin, rx_pin, rts_pin);
+}
 
 static void configure_led(void)
 {
@@ -299,11 +323,6 @@ static void eth_init(void)
 }
 #endif // CONFIG_EXAMPLE_USE_ETH
 
-// static void dmx_sender(char dmxParameter[512])
-// {
-//     ESP_LOGI(TAG, "%s", *dmxParameter);
-// }
-
 int hexStringToUint8Array(const char *hexStr, uint8_t *outArray, size_t maxLen)
 {
     size_t len = strlen(hexStr);
@@ -338,10 +357,9 @@ int hexStringToUint8Array(const char *hexStr, uint8_t *outArray, size_t maxLen)
 static void udp_server_task(void *pvParameters)
 {
     esp_task_wdt_add(NULL);
-    char rx_buffer[1024];
-    // char past_rx_buffer[512];
+    char rx_buffer[DMX_LENGTH * 2 + 1];
     char addr_str[128];
-    uint8_t dmxData[512];
+    uint8_t dmxData[DMX_LENGTH];
     int addr_family = (int)pvParameters;
     int ip_protocol = 0;
     struct sockaddr_in6 dest_addr;
@@ -349,26 +367,9 @@ static void udp_server_task(void *pvParameters)
     int count = 0;
     int error = 0;
 
-    ledc_timer_config_t ledc_timer = {
-        .duty_resolution = LEDC_TIMER_8_BIT,
-        .freq_hz = 5000,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .timer_num = LEDC_TIMER_0,
-        .clk_cfg = LEDC_APB_CLK};
-    ledc_timer_config(&ledc_timer);
-
-    ledc_channel_config_t ledc_channel = {
-        .channel = LEDC_CHANNEL_0,
-        .duty = 0,
-        .gpio_num = LED_PIN,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .hpoint = 0,
-        .timer_sel = LEDC_TIMER_0};
-    ledc_channel_config(&ledc_channel);
-
     // ここから2行はwhileに入れるな!
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(20); // 20ms間隔
+    const TickType_t xFrequency = pdMS_TO_TICKS(LOOP_WAIT_TIME);
     // whileに入れるな区間終わり
 
     while (1)
@@ -449,7 +450,7 @@ static void udp_server_task(void *pvParameters)
         while (1)
         {
             count++;
-            ESP_LOGI(TAG, "Waiting for data");
+            // ESP_LOGI(TAG, "Waiting for data");
 #if defined(CONFIG_LWIP_NETBUF_RECVINFO) && !defined(CONFIG_EXAMPLE_IPV6)
             int len = recvmsg(sock, &msg, 0);
 #else
@@ -461,15 +462,15 @@ static void udp_server_task(void *pvParameters)
                 if (errno == EWOULDBLOCK || errno == EAGAIN)
                 {
                     error++;
-                    ESP_LOGI(TAG, "Data not received.\t\t%lf", (double)(error * (double)100 / count));
-                    gpio_set_level(BLINK_GPIO_RED, 1);
+                    // ESP_LOGI(TAG, "Data not received.\t\tError percent : %lf", (double)(error * (double)100 / count));
                     // ここでDMX送信コード(前回受信分と同じ信号)を書きたい
                 }
                 else
                 {
-                    ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+                    // ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
                     break;
                 }
+                gpio_set_level(BLINK_GPIO_RED, 1);
             }
             // Data received
             else
@@ -496,29 +497,28 @@ static void udp_server_task(void *pvParameters)
                 }
 
                 rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string...
-                ESP_LOGI(TAG, "Received %d bytes from %s: %s\tError percent:%lf", len, addr_str, rx_buffer, (double)(error * (double)100 / count));
+                // ESP_LOGI(TAG, "Received %d bytes from %s: %s\tError percent:%lf", len, addr_str, rx_buffer, (double)(error * (double)100 / count));
                 gpio_set_level(BLINK_GPIO_RED, 0);
                 int numBytes = hexStringToUint8Array(rx_buffer, dmxData, sizeof(dmxData));
                 if (numBytes < 0)
                 {
-                    ESP_LOGE(TAG, "Failed convert.");
+                    // ESP_LOGE(TAG, "Failed convert.");
                     gpio_set_level(BLINK_GPIO_RED, 1);
-                }
-                else
-                {
-                    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, dmxData[0]);
-                    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
                 }
                 // ここでDMX送信コード(新規受信分)を書きたい
 
                 int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
                 if (err < 0)
                 {
-                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                    // ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
                     close(sock);
                     continue;
                 }
             }
+            // ESP_LOGI(TAG, "dmx data[0]: %u", dmxData[0]);
+            dmx_write(dmx_num, dmxData, sizeof(dmxData));
+            dmx_send(dmx_num);
+            dmx_wait_sent(dmx_num, DMX_TIMEOUT_TICK);
             esp_task_wdt_reset();
             vTaskDelayUntil(&xLastWakeTime, xFrequency);
         }
@@ -536,6 +536,7 @@ static void udp_server_task(void *pvParameters)
 void app_main(void)
 {
     configure_led();
+    configure_dmx();
     gpio_set_level(BLINK_GPIO_RED, 1);
     s_network_event_group = xEventGroupCreate();
 
