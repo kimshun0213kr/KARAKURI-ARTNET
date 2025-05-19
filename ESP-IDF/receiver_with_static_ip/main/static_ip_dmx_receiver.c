@@ -88,8 +88,8 @@ static EventGroupHandle_t s_network_event_group;
 #define LOOP_WAIT_TIME 22
 
 // DMX関連の初期化
-#define BLINK_GPIO_RED 10
-#define BLINK_GPIO_BLUE 9
+#define BLINK_GPIO_RED 4
+#define BLINK_GPIO_BLUE 5
 #define LED_PIN 2
 #define ETH_CONNECTION_TMO_MS (10000)
 
@@ -326,13 +326,8 @@ static void eth_init(void)
 int hexStringToUint8Array(const char *hexStr, uint8_t *outArray, size_t maxLen)
 {
     size_t len = strlen(hexStr);
-    if (len % 2 != 0)
-    {
-        return -1; // 文字列の長さが奇数 → 無効
-    }
-
     size_t count = len / 2;
-    if (count > maxLen)
+    if (len % 2 != 0 || count > maxLen)
     {
         return -1; // 配列サイズオーバー
     }
@@ -364,12 +359,10 @@ static void udp_server_task(void *pvParameters)
     int ip_protocol = 0;
     struct sockaddr_in6 dest_addr;
 
-    int count = 0;
-    int error = 0;
-
     // ここから2行はwhileに入れるな!
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(LOOP_WAIT_TIME);
+    TaskHandle_t error_led_handle = NULL;
     // whileに入れるな区間終わり
 
     while (1)
@@ -449,7 +442,6 @@ static void udp_server_task(void *pvParameters)
 
         while (1)
         {
-            count++;
             // ESP_LOGI(TAG, "Waiting for data");
 #if defined(CONFIG_LWIP_NETBUF_RECVINFO) && !defined(CONFIG_EXAMPLE_IPV6)
             int len = recvmsg(sock, &msg, 0);
@@ -459,15 +451,8 @@ static void udp_server_task(void *pvParameters)
             // Error occurred during receiving
             if (len < 0)
             {
-                if (errno == EWOULDBLOCK || errno == EAGAIN)
+                if (!(errno == EWOULDBLOCK || errno == EAGAIN))
                 {
-                    error++;
-                    // ESP_LOGI(TAG, "Data not received.\t\tError percent : %lf", (double)(error * (double)100 / count));
-                    // ここでDMX送信コード(前回受信分と同じ信号)を書きたい
-                }
-                else
-                {
-                    // ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
                     break;
                 }
                 gpio_set_level(BLINK_GPIO_RED, 1);
@@ -497,15 +482,14 @@ static void udp_server_task(void *pvParameters)
                 }
 
                 rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string...
-                // ESP_LOGI(TAG, "Received %d bytes from %s: %s\tError percent:%lf", len, addr_str, rx_buffer, (double)(error * (double)100 / count));
                 gpio_set_level(BLINK_GPIO_RED, 0);
+                ESP_LOGI(TAG, "%s", rx_buffer);
                 int numBytes = hexStringToUint8Array(rx_buffer, dmxData, sizeof(dmxData));
                 if (numBytes < 0)
                 {
-                    // ESP_LOGE(TAG, "Failed convert.");
+                    // 変換失敗時のエラーLED表示
                     gpio_set_level(BLINK_GPIO_RED, 1);
                 }
-                // ここでDMX送信コード(新規受信分)を書きたい
 
                 int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
                 if (err < 0)
@@ -515,7 +499,7 @@ static void udp_server_task(void *pvParameters)
                     continue;
                 }
             }
-            // ESP_LOGI(TAG, "dmx data[0]: %u", dmxData[0]);
+            ESP_LOGI(TAG, "dmx data[0]: %u", dmxData[0]);
             dmx_write(dmx_num, dmxData, sizeof(dmxData));
             dmx_send(dmx_num);
             dmx_wait_sent(dmx_num, DMX_TIMEOUT_TICK);
